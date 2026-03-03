@@ -1,0 +1,101 @@
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: testgen_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: testgen
+      POSTGRES_PASSWORD: testgen
+      POSTGRES_DB: testgen_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testgen -d testgen_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: testgen_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ───────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: testgen_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://testgen:testgen@db:5432/testgen_db
+      DATABASE_URL_SYNC: postgresql://testgen:testgen@db:5432/testgen_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app            # live reload in dev
+      - git_repo:/app/test_repo   # mounted git workspace
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── Celery Worker ─────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: testgen_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://testgen:testgen@db:5432/testgen_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes:
+      - ./backend:/app
+      - git_repo:/app/test_repo
+    depends_on:
+      - backend
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
+
+  # ── Frontend (React) ──────────────────────────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    container_name: testgen_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  git_repo:
