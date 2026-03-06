@@ -1,76 +1,80 @@
+"""
+JIRA Stories router.
+Phase 2: import endpoint now triggers JiraFetchAgent via Celery.
+"""
+
 import uuid
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
+from sqlalchemy import select, func
 
 from app.core.database import get_db
-from app.models import JiraStory, StoryStatus
+from app.models.models import JiraStory, StoryStatus
+from app.schemas.story import StoryResponse, ImportResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ── Schemas ────────────────────────────────────────────────────────────────
-
-class StoryImportRequest(BaseModel):
-    story_id: str  # e.g. "PROJ-123"
-
-
-class StoryResponse(BaseModel):
-    id: str
-    story_id: str
-    project_key: str
-    title: str
-    description: str | None
-    acceptance_criteria: dict | None
-    priority: str | None
-    jira_status: str | None
-    status: str
-    created_at: str
-
-    class Config:
-        from_attributes = True
-
-
-# ── Endpoints ──────────────────────────────────────────────────────────────
-
-@router.post("/import/{story_id}", status_code=status.HTTP_202_ACCEPTED, summary="Import a JIRA story")
+@router.post(
+    "/import/{story_id}",
+    response_model=ImportResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Import a JIRA story via AI agent",
+)
 async def import_story(
     story_id: str,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Triggers the JIRA Fetch Agent to pull story details and persist them.
-    Returns immediately; agent runs as a background task.
-    (Full agent implementation in Phase 2)
+    Creates a placeholder DB record, then dispatches the JiraFetchAgent
+    as a Celery background task to fetch and enrich the story from JIRA.
+
+    Returns immediately with 202 Accepted — poll GET /jira/stories/{id}
+    to check when the story is fully populated.
     """
-    # Check if already imported
+    story_key = story_id.upper().strip()
+
+    # Check for duplicate
     existing = await db.scalar(
-        select(JiraStory).where(JiraStory.story_id == story_id.upper())
+        select(JiraStory).where(JiraStory.story_id == story_key)
     )
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Story {story_id} already imported. Use GET /jira/stories to view it.",
+            detail=f"Story {story_key} already imported (db_id={existing.id}). "
+                   f"Use GET /api/v1/jira/stories/{existing.id} to view it.",
         )
 
-    # TODO Phase 2: background_tasks.add_task(jira_fetch_agent.run, story_id, db)
-    # For now, create a placeholder record
+    # Create placeholder row — agent fills in the real data
     story = JiraStory(
-        story_id=story_id.upper(),
-        project_key=story_id.split("-")[0].upper() if "-" in story_id else "UNKNOWN",
-        title=f"[Pending import] {story_id}",
+        story_id=story_key,
+        project_key=story_key.split("-")[0] if "-" in story_key else "UNKNOWN",
+        title=f"[Importing...] {story_key}",
         status=StoryStatus.NEW,
     )
     db.add(story)
-    await db.flush()
+    await db.flush()  # get the UUID before committing
+    story_db_id = str(story.id)
+    await db.commit()
 
-    return {
-        "message": f"Import of {story_id} queued.",
-        "story_db_id": str(story.id),
-        "status": "pending",
-    }
+    # Dispatch Celery task
+    try:
+        from app.services.tasks import import_jira_story
+        import_jira_story.delay(story_db_id, story_key)
+        logger.info(f"Dispatched import task for {story_key} (db_id={story_db_id})")
+    except Exception as e:
+        logger.error(f"Failed to dispatch Celery task: {e}")
+        # Don't fail the request — the placeholder row exists, can retry manually
+
+    return ImportResponse(
+        message=f"Import of {story_key} queued. Poll GET /api/v1/jira/stories/{story_db_id} for status.",
+        story_db_id=story_db_id,
+        story_id=story_key,
+        status="importing",
+    )
 
 
 @router.get("/stories", summary="List all imported stories")
@@ -83,7 +87,7 @@ async def list_stories(
         select(JiraStory).order_by(JiraStory.created_at.desc()).offset(skip).limit(limit)
     )
     stories = result.scalars().all()
-    total = await db.scalar(select(JiraStory).count() if False else __import__("sqlalchemy").func.count(JiraStory.id))
+    total = await db.scalar(select(func.count(JiraStory.id)))
 
     return {
         "total": total,
@@ -126,9 +130,21 @@ async def get_story(story_db_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.delete("/stories/{story_db_id}", status_code=204, summary="Delete an imported story")
+@router.delete("/stories/{story_db_id}", status_code=204, summary="Delete a story")
 async def delete_story(story_db_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     story = await db.get(JiraStory, story_db_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     await db.delete(story)
+
+
+@router.post("/stories/{story_db_id}/retry-import", status_code=202, summary="Retry a failed import")
+async def retry_import(story_db_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Re-dispatch the import agent for a story stuck in [Importing...] state."""
+    story = await db.get(JiraStory, story_db_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    from app.services.tasks import import_jira_story
+    import_jira_story.delay(str(story_db_id), story.story_id)
+    return {"message": f"Retrying import for {story.story_id}"}

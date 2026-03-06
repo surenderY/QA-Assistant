@@ -1,3 +1,5 @@
+from app.core.logging_config import setup_logging
+setup_logging()                          # ← add these two lines at the top
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -32,7 +34,7 @@ app = FastAPI(
 # ── CORS ───────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=settings.get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

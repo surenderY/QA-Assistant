@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Git config for the Git Agent ──────────────────────────────────────────
-RUN git config --global user.email "testgen@company.com" && \
-    git config --global user.name "TestGen Bot"
+RUN git config --global user.email "surenderaccounts@gmail.com" && \
+    git config --global user.name "surenderY"
 
 WORKDIR /app
 

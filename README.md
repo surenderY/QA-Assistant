@@ -77,6 +77,7 @@ Services started:
 - **Swagger docs**: http://localhost:8000/docs
 - **PostgreSQL**: localhost:5432
 - **Redis**: localhost:6379
+- **Flower Celery**:  http://localhost:5555
 
 ### 2b. Run locally (no Docker)
 
@@ -106,6 +107,11 @@ cd backend && alembic upgrade head
 ```bash
 curl http://localhost:8000/health
 # → {"status": "ok", "app": "TestGen AI", "env": "development"}
+```
+
+## Front-end ##
+```
+http://localhost:5173/
 ```
 
 ---
@@ -166,3 +172,158 @@ See `.env.example` for the full list. Key variables:
 | `GIT_REMOTE_URL` | Test scripts repository URL |
 | `GIT_TOKEN` | Personal access token for Git push |
 | `SECRET_KEY` | JWT signing secret — change in production |
+
+
+
+---
+
+# PHASE 2
+
+New / changed files
+| File | What it does |
+|---|---|
+| agents/jira_fetch_agent.py | Claude-powered agent — agentic loop with 2 tools: fetch_jira_story and structure_story_data |
+| services/jira_service.py | Clean JIRA client wrapper — fetches issues, parses ADF format, extracts acceptance criteria |
+| services/tasks.py | Celery task import_jira_story — runs agent in background, updates DB row with real data |
+| schemas/story.py | Pydantic schemas for request/response shapes |
+| api/routes/stories.py | Import endpoint now dispatches the Celery task + added retry endpoint |
+| core/celery_app.py | Switched to autodiscover_tasks to fix worker crash |
+
+        
+
+### How it works end-to-end ###
+
+POST /api/v1/jira/import/PROJ-123
+
+```
+  → Creates placeholder DB row  →  Dispatches Celery task
+                                           ↓
+                              JiraFetchAgent.run("PROJ-123")
+                                         ↓
+                              Claude calls fetch_jira_story tool
+                                         ↓
+                              JiraService fetches from JIRA API
+                                         ↓
+                              Claude analyses + calls structure_story_data
+                                         ↓
+                              DB row updated with full enriched data
+```
+
+GET /api/v1/jira/stories/{id}   ← poll this to see completed import
+
+Apply & restart
+```
+bash# Copy the 6 new files into your project (matching paths)
+docker-compose down
+docker-compose up --build
+
+# Test it
+bash# Import a story (make sure .env has JIRA_* values set)
+curl -X POST http://localhost:8000/api/v1/jira/import/Z33F586ECB-6
+
+# Poll for result
+curl http://localhost:8000/api/v1/jira/stories/{story_db_id}
+```
+
+# PHASE 3
+
+Here's what was built:
+
+| File | What it does |
+|---|---|
+| agents/test_plan_agent.py | Claude analyses story → calls structure_test_plan tool → returns TestPlanDocument with full scenario list |
+| agents/script_gen_agent.py | Claude generates pytest script per scenario → validates Python AST syntax → retries if syntax error |
+| schemas/testplan.py | TestScenario, TestPlanDocument, ScriptResponse Pydantic models |
+| services/tasks.py | Two new Celery tasks: generate_test_plan and generate_scripts |
+| api/routes/testplans.py | Full router — generate, get plan, list scenarios, delete |
+| api/routes/scripts.py | Full router — generate, list, get content, delete |
+
+## End-to-end flow after applying ##
+
+```
+# 1. Import a story (Phase 2)
+POST /api/v1/jira/import/SCRUM-7
+
+# 2. Generate test plan
+POST /api/v1/testplan/generate/{story_db_id}
+
+# 3. Poll until scenarios appear
+GET /api/v1/testplan/{story_db_id}
+
+# 4. Generate scripts for all scenarios
+POST /api/v1/scripts/generate/{plan_id}
+
+# 5. List generated scripts
+GET /api/v1/scripts/{plan_id}
+
+# 6. Read a script's content
+GET /api/v1/scripts/{plan_id}/{script_id}/content
+```
+
+
+
+# Front End #
+
+## File structure ##
+frontend/
+├── index.html
+├── package.json          React 18 + Vite + TanStack Query + Recharts
+├── vite.config.js        Proxy /api → backend:8000
+└── src/
+    ├── index.css         Design system — IBM Plex Mono, dark industrial theme
+    ├── main.jsx
+    ├── App.jsx           Router + QueryClient
+    ├── api/client.js     All API calls in one place
+    ├── hooks/useToast.js Toast notifications
+    ├── components/
+    │   ├── Layout.jsx    Sidebar nav with phase progress indicator
+    │   └── ui.jsx        Badge, Button, Card, StatCard, Modal, Input, Toast...
+    └── pages/
+        ├── Dashboard.jsx     Stats, exec chart, recent stories, phase status
+        ├── JiraImport.jsx    Import input, stories table, story detail modal
+        ├── TestGeneration.jsx Story selector, plan viewer, scenario cards, script viewer
+        └── Execution.jsx     Phase 5 placeholder
+
+
+What each view does
+
+View    Key interactions
+Dashboard   Live stats, pass/fail chart, recent stories, phase progress
+JIRA Import   Type story ID → import → poll table → click row for full detail modal
+Test Generation   Select story → Generate Plan → expand scenarios → select some/all → Generate   Scripts → View code
+ExecutionPhase 5 placeholder with planned feature list
+
+
+# PHASE 4 #
+
+
+## What was built ##
+
+File      What it does
+agents/git_agent.py   Claude generates branch name + commit message via create_git_commit_plan tool, with deterministic fallback if Claude fails
+services/git_service.py   GitPython wrapper — clone/init repo, create branches, write files, stage, commit, push
+services/tasks.pycommit_scripts_to_git Celery task — loads scripts, runs GitAgent, updates DB with branch/SHA
+api/routes/scripts.py     Two new endpoints: POST /{script_id}/commit (single) and POST /commit-batch/{plan_id} (multiple) + GET /repo/status
+frontend/TestGeneration.jsx   Commit button, script selection checkboxes, commit modal with repo status, committed scripts show branch + SHA
+docker-compose.yml    Git env vars added to backend + worker, Flower included
+
+End-to-end flow
+```
+Scripts generated
+      ↓
+Click "Commit to Git" → select scripts → modal shows repo info
+      ↓
+POST /api/v1/scripts/commit-batch/{plan_id}
+      ↓
+Celery task → GitAgent → Claude picks branch name + commit message
+      ↓
+GitService creates branch → writes files → commits → pushes (if remote)
+      ↓
+DB updated: is_committed=true, branch_name, commit_sha, git_path
+      ↓
+Frontend shows branch + short SHA on each script row
+```
+
+mkdir -p test_repo
+
+

@@ -1,0 +1,96 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-base:      #0c0c0d;
+  --bg-surface:   #131315;
+  --bg-elevated:  #1a1a1e;
+  --bg-overlay:   #202026;
+  --border:       #2a2a32;
+  --border-bright:#3a3a46;
+
+  --amber:        #f59e0b;
+  --amber-dim:    #92600a;
+  --amber-glow:   rgba(245,158,11,0.12);
+  --amber-bright: #fcd34d;
+
+  --green:        #10b981;
+  --green-dim:    rgba(16,185,129,0.15);
+  --red:          #ef4444;
+  --red-dim:      rgba(239,68,68,0.15);
+  --blue:         #3b82f6;
+  --blue-dim:     rgba(59,130,246,0.15);
+  --purple:       #8b5cf6;
+  --purple-dim:   rgba(139,92,246,0.15);
+
+  --text-primary: #e8e8f0;
+  --text-secondary:#9090a8;
+  --text-muted:   #5a5a72;
+  --text-amber:   #f59e0b;
+
+  --font-mono:    'IBM Plex Mono', monospace;
+  --font-sans:    'IBM Plex Sans', sans-serif;
+
+  --radius-sm:    4px;
+  --radius:       6px;
+  --radius-lg:    10px;
+
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.5);
+  --shadow:       0 4px 16px rgba(0,0,0,0.6);
+  --shadow-amber: 0 0 20px rgba(245,158,11,0.15);
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Keyframes ─────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-amber {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.4); }
+  50%       { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.fade-in { animation: fadeIn 0.25s ease forwards; }
+
+/* ── Skeleton loader ───────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-overlay) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius);
+}
+
+/* ── Scrollable code block ─────────────────────────────────── */
+.code-block {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  overflow: auto;
+  white-space: pre;
+  color: var(--text-primary);
+  line-height: 1.7;
+}

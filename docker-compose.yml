@@ -20,6 +20,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  
+  
 
   # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
@@ -36,6 +38,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Flower (Celery monitor) ───────────────────────────────────────────────
+  flower:
+    image: mher/flower:2.0
+    container_name: testgen_flower
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      FLOWER_PORT: 5555
+    command: celery --broker=redis://redis:6379/0 flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - worker
+
+
   # ── FastAPI Backend ───────────────────────────────────────────────────────
   backend:
     build:
@@ -46,15 +63,17 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://testgen:testgen@db:5432/testgen_db
-      DATABASE_URL_SYNC: postgresql://testgen:testgen@db:5432/testgen_db
+      DATABASE_URL_SYNC: postgresql://testgen:testgen@db:5432/testgen_db    # ← must be @db not @localhost
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:3000"
     ports:
-      - "8000:8000"
+      - "8080:8000"
     volumes:
-      - ./backend:/app            # live reload in dev
-      - git_repo:/app/test_repo   # mounted git workspace
+      - ./backend:/app
+      - ./logs/backend:/app/logs
+      - ./test_repo:/app/test_repo    # ← bind mount instead of named volume
     depends_on:
       db:
         condition: service_healthy
@@ -72,14 +91,20 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://testgen:testgen@db:5432/testgen_db
+      DATABASE_URL_SYNC: postgresql://testgen:testgen@db:5432/testgen_db
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:3000"
     volumes:
       - ./backend:/app
-      - git_repo:/app/test_repo
+      - ./logs/worker:/app/logs
+      - ./test_repo:/app/test_repo    # ← bind mount instead of named volume
     depends_on:
-      - backend
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
 
   # ── Frontend (React) ──────────────────────────────────────────────────────
@@ -91,11 +116,12 @@ services:
       - ./frontend:/app
     ports:
       - "5173:5173"
+    # Only start if package.json exists
     command: sh -c "npm install && npm run dev -- --host"
     depends_on:
       - backend
 
+
 volumes:
   postgres_data:
   redis_data:
-  git_repo:

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",          # ignore unknown env vars
     )
 
     # App
@@ -16,34 +18,20 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     debug: bool = True
 
-    # Database
-    database_url: str = "postgresql+asyncpg://testgen:testgen@localhost:5432/testgen_db"
-    database_url_sync: str = "postgresql://testgen:testgen@localhost:5432/testgen_db"
+    
 
-    # Redis / Celery
-    redis_url: str = "redis://localhost:6379/0"
-    celery_broker_url: str = "redis://localhost:6379/0"
-    celery_result_backend: str = "redis://localhost:6379/1"
+    # CORS — stored as plain string, parsed into list
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
 
-    # Anthropic
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-opus-4-6"
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_origins(cls, v):
+        if isinstance(v, list):
+            return ",".join(v)
+        return v
 
-    # JIRA
-    jira_server_url: str = ""
-    jira_email: str = ""
-    jira_api_token: str = ""
-
-    # Git
-    git_repo_path: str = "/app/test_repo"
-    git_remote_url: str = ""
-    git_username: str = ""
-    git_token: str = ""
-    git_author_name: str = "TestGen Bot"
-    git_author_email: str = "testgen@company.com"
-
-    # CORS
-    allowed_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    def get_allowed_origins(self) -> list[str]:
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
     @property
     def is_development(self) -> bool:

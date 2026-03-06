@@ -1,0 +1,161 @@
+# dev setup
+python -m venv .venv
+soruce .venv/bin/activate
+
+pip install -r backend/requirements.txt
+
+
+# Running FASTApi application
+```
+uvicorn main:app --reload
+http://127.0.0.1:8000
+```
+
+# check postgres is running in local machine
+sudo systemctl start postgresql
+
+# first time after backend is up
+docker-compose exec backend alembic upgrade head
+
+# checks
+# Check all containers are up
+docker-compose ps
+
+# Hit the health endpoint
+curl http://localhost:8000/health
+
+# Open Swagger UI
+open http://localhost:8000/docs
+
+**Flower Celery**:  http://localhost:5555
+
+
+# to silence docker compose warning noise
+# Linux
+sudo apt-get update && sudo apt-get install docker-compose-plugin
+
+# Then use:
+docker compose up   # (no hyphen)
+
+
+
+############## PHASE 2 ####################
+
+Phase 2 complete. Here's exactly what changed and what each file does:
+
+New / changed files
+File                                        What it does
+agents/jira_fetch_agent.py              Claude-powered agent — agentic loop with 2 tools: fetch_jira_story and structure_story_data
+services/jira_service.py                Clean JIRA client wrapper — fetches issues, parses ADF format, extracts acceptance criteria
+services/tasks.py                       Celery task import_jira_story — runs agent in background, updates DB row with real data
+schemas/story.py                        Pydantic schemas for request/response shapes
+api/routes/stories.py                   Import endpoint now dispatches the Celery task + added retry endpoint
+core/celery_app.py                      Switched to autodiscover_tasks to fix worker crash
+
+How it works end-to-end
+POST /api/v1/jira/import/PROJ-123
+  → Creates placeholder DB row  →  Dispatches Celery task
+                                         ↓
+                              JiraFetchAgent.run("PROJ-123")
+                                         ↓
+                              Claude calls fetch_jira_story tool
+                                         ↓
+                              JiraService fetches from JIRA API
+                                         ↓
+                              Claude analyses + calls structure_story_data
+                                         ↓
+                              DB row updated with full enriched data
+
+GET /api/v1/jira/stories/{id}   ← poll this to see completed import
+
+Apply & restart
+bash# Copy the 6 new files into your project (matching paths)
+docker-compose down
+docker-compose up --build
+Test it
+bash# Import a story (make sure .env has JIRA_* values set)
+curl -X POST http://localhost:8000/api/v1/jira/import/PROJ-123
+
+# Poll for result
+curl http://localhost:8000/api/v1/jira/stories/{story_db_id}
+
+
+# Inside the worker container
+docker-compose exec worker python -c "
+from app.services.jira_service import JiraService
+svc = JiraService()
+print('Connected:', svc.test_connection())
+projects = svc.client.projects()
+for p in projects:
+    print(p.key, '-', p.name)
+"
+
+
+
+# All logs from all containers
+docker-compose logs
+
+# Backend only (most useful)
+docker-compose logs backend
+
+# Worker only
+docker-compose logs worker
+
+# Follow live (like tail -f)
+docker-compose logs -f backend
+
+# Follow both backend and worker live
+docker-compose logs -f backend worker
+
+# Last N lines only
+docker-compose logs --tail=50 backend
+
+# Last 50 lines and follow
+docker-compose logs -f --tail=50 backend
+
+
+Host:     localhost
+Port:     5432
+Database: testgen_db
+Username: testgen
+Password: testgen
+
+## from host machine
+psql -h localhost -p 5432 -U testgen -d testgen_db
+# Password: testgen
+```
+
+**GUI Tools — connect with these settings:**
+```
+Host:     localhost
+Port:     5432
+Database: testgen_db
+Username: testgen
+Password: testgen
+
+## from container
+# Open psql inside the running container
+docker-compose exec db psql -U testgen -d testgen_db
+
+# Useful queries once inside:
+\dt                          -- list all tables
+\d jira_stories              -- describe a table
+SELECT * FROM jira_stories;
+SELECT * FROM test_plans;
+SELECT * FROM test_scripts;
+
+# to verify existing celery jobs
+docker-compose exec worker celery -A app.core.celery_app inspect registered
+
+### Celery Command ####
+# See all active (currently running) tasks
+docker-compose exec worker celery -A app.core.celery_app inspect active
+
+# See scheduled/reserved (queued, waiting for a worker)
+docker-compose exec worker celery -A app.core.celery_app inspect reserved
+
+# See registered task names
+docker-compose exec worker celery -A app.core.celery_app inspect registered
+
+# Stats — worker concurrency, task counts etc
+docker-compose exec worker celery -A app.core.celery_app inspect stats
