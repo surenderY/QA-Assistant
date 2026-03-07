@@ -1,44 +1,80 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Dark theme (default) ──────────────────────────────────── */
 :root {
-  --bg-base:      #0c0c0d;
-  --bg-surface:   #131315;
-  --bg-elevated:  #1a1a1e;
-  --bg-overlay:   #202026;
-  --border:       #2a2a32;
-  --border-bright:#3a3a46;
+  --bg-base:       #0c0c0d;
+  --bg-surface:    #131315;
+  --bg-elevated:   #1a1a1e;
+  --bg-overlay:    #202026;
+  --border:        #2a2a32;
+  --border-bright: #3a3a46;
 
-  --amber:        #f59e0b;
-  --amber-dim:    #92600a;
-  --amber-glow:   rgba(245,158,11,0.12);
-  --amber-bright: #fcd34d;
+  --amber:         #f59e0b;
+  --amber-dim:     #92600a;
+  --amber-glow:    rgba(245,158,11,0.12);
+  --amber-bright:  #fcd34d;
 
-  --green:        #10b981;
-  --green-dim:    rgba(16,185,129,0.15);
-  --red:          #ef4444;
-  --red-dim:      rgba(239,68,68,0.15);
-  --blue:         #3b82f6;
-  --blue-dim:     rgba(59,130,246,0.15);
-  --purple:       #8b5cf6;
-  --purple-dim:   rgba(139,92,246,0.15);
+  --green:         #10b981;
+  --green-dim:     rgba(16,185,129,0.15);
+  --red:           #ef4444;
+  --red-dim:       rgba(239,68,68,0.15);
+  --blue:          #3b82f6;
+  --blue-dim:      rgba(59,130,246,0.15);
+  --purple:        #8b5cf6;
+  --purple-dim:    rgba(139,92,246,0.15);
 
-  --text-primary: #e8e8f0;
-  --text-secondary:#9090a8;
-  --text-muted:   #5a5a72;
-  --text-amber:   #f59e0b;
+  --text-primary:   #e8e8f0;
+  --text-secondary: #b5b6b3;
+  /* --text-secondary: #9090a8; */
+  --text-muted:     #a9a9b3;
 
-  --font-mono:    'IBM Plex Mono', monospace;
-  --font-sans:    'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-sans: 'IBM Plex Sans', sans-serif;
 
-  --radius-sm:    4px;
-  --radius:       6px;
-  --radius-lg:    10px;
+  --radius-sm: 4px;
+  --radius:    6px;
+  --radius-lg: 10px;
 
   --shadow-sm:    0 1px 3px rgba(0,0,0,0.5);
   --shadow:       0 4px 16px rgba(0,0,0,0.6);
   --shadow-amber: 0 0 20px rgba(245,158,11,0.15);
+
+  --theme-transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* ── Light theme ───────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-base:       #f4f4f6;
+  --bg-surface:    #ffffff;
+  --bg-elevated:   #f0f0f4;
+  --bg-overlay:    #e8e8ee;
+  --border:        #dcdce8;
+  --border-bright: #c8c8d8;
+
+  --amber:         #d97706;
+  --amber-dim:     #b45309;
+  --amber-glow:    rgba(217,119,6,0.10);
+  --amber-bright:  #f59e0b;
+
+  --green:         #059669;
+  --green-dim:     rgba(5,150,105,0.12);
+  --red:           #dc2626;
+  --red-dim:       rgba(220,38,38,0.10);
+  --blue:          #2563eb;
+  --blue-dim:      rgba(37,99,235,0.10);
+  --purple:        #7c3aed;
+  --purple-dim:    rgba(124,58,237,0.10);
+
+  --text-primary:   #18181f;
+  --text-secondary: #2d2d3a;
+  --text-muted:     #8888a8;
+
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.08);
+  --shadow:       0 4px 16px rgba(0,0,0,0.12);
+  --shadow-amber: 0 0 20px rgba(217,119,6,0.12);
+}
+
+/* ── Base styles ───────────────────────────────────────────── */
 html, body, #root {
   height: 100%;
   background: var(--bg-base);
@@ -47,7 +83,16 @@ html, body, #root {
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  transition: var(--theme-transition);
 }
+
+/* Apply transition to common elements */
+*, *::before, *::after {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* But don't animate transforms/opacity (breaks animations) */
+.fade-in, .skeleton { transition: none; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-base); }
@@ -58,10 +103,6 @@ html, body, #root {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-@keyframes pulse-amber {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.4); }
-  50%       { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -81,7 +122,7 @@ html, body, #root {
   border-radius: var(--radius);
 }
 
-/* ── Scrollable code block ─────────────────────────────────── */
+/* ── Code block ────────────────────────────────────────────── */
 .code-block {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -93,4 +134,44 @@ html, body, #root {
   white-space: pre;
   color: var(--text-primary);
   line-height: 1.7;
+}
+
+/* ── Theme toggle button ───────────────────────────────────── */
+.theme-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 99px;
+  border: 1px solid var(--border-bright);
+  background: var(--bg-overlay);
+  cursor: pointer;
+  transition: background 0.25s ease, border-color 0.25s ease;
+  flex-shrink: 0;
+}
+.theme-toggle[data-on="true"] {
+  background: var(--amber-glow);
+  border-color: var(--amber-dim);
+}
+.theme-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.25s cubic-bezier(.34,1.56,.64,1), background 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme-toggle[data-on="true"] .theme-toggle-knob {
+  transform: translateX(18px);
+  background: var(--amber);
+}
+
+/* ── Select element ────────────────────────────────────────── */
+select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
 }

@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, FileSearch, FlaskConical, Play, Zap } from 'lucide-react'
+import { LayoutDashboard, FileSearch, FlaskConical, Play, Zap, Sun, Moon } from 'lucide-react'
+import { useTheme } from '../hooks/useTheme'
 
 const NAV = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
@@ -7,6 +8,25 @@ const NAV = [
   { to: '/generate', icon: FlaskConical,    label: 'Test Generation' },
   { to: '/execute',  icon: Play,            label: 'Execution' },
 ]
+
+function ThemeToggle() {
+  const { theme, toggle, isDark } = useTheme()
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <Sun size={11} color={isDark ? 'var(--text-muted)' : 'var(--amber)'} />
+      <button
+        onClick={toggle}
+        className="theme-toggle"
+        data-on={!isDark}
+        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        aria-label="Toggle theme"
+      >
+        <div className="theme-toggle-knob" />
+      </button>
+      <Moon size={11} color={isDark ? 'var(--amber)' : 'var(--text-muted)'} />
+    </div>
+  )
+}
 
 export default function Layout({ children }) {
   return (
@@ -19,16 +39,13 @@ export default function Layout({ children }) {
         display: 'flex', flexDirection: 'column',
       }}>
         {/* Logo */}
-        <div style={{
-          padding: '20px 20px 16px',
-          borderBottom: '1px solid var(--border)',
-        }}>
+        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 28, height: 28, background: 'var(--amber)',
               borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <Zap size={14} color="#0c0c0d" fill="#0c0c0d" />
+              <Zap size={14} color="#fff" fill="#fff" />
             </div>
             <div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: '13px', letterSpacing: '0.05em' }}>
@@ -53,7 +70,6 @@ export default function Layout({ children }) {
               color: isActive ? 'var(--amber)' : 'var(--text-secondary)',
               background: isActive ? 'var(--amber-glow)' : 'transparent',
               borderLeft: isActive ? '2px solid var(--amber)' : '2px solid transparent',
-              transition: 'all 0.12s',
             })}>
               <Icon size={14} />
               {label}
@@ -61,18 +77,29 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        {/* Footer */}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
-          <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
-            PHASE 1–3 ACTIVE
+        {/* Footer — theme toggle + phase progress */}
+        <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Theme toggle row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
+              THEME
+            </span>
+            <ThemeToggle />
           </div>
-          <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-            {[1,2,3,4,5,6].map(p => (
-              <div key={p} style={{
-                height: 3, flex: 1, borderRadius: 2,
-                background: p <= 3 ? 'var(--amber)' : 'var(--border)',
-              }} />
-            ))}
+
+          {/* Phase progress */}
+          <div>
+            <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 6 }}>
+              PHASE 1–4 ACTIVE
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[1,2,3,4,5,6].map(p => (
+                <div key={p} style={{
+                  height: 3, flex: 1, borderRadius: 2,
+                  background: p <= 4 ? 'var(--amber)' : 'var(--border)',
+                }} />
+              ))}
+            </div>
           </div>
         </div>
       </aside>

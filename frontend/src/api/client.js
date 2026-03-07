@@ -34,8 +34,9 @@ export const deleteTestPlan   = (planId)    => api.delete(`/testplan/${planId}`)
 // ── Test Scripts ───────────────────────────────────────────────────────────
 export const generateScripts  = (planId, scenarioIds = null) =>
   api.post(`/scripts/generate/${planId}`, { scenario_ids: scenarioIds })
-export const listScripts      = (planId) => api.get(`/scripts/${planId}`)
-export const getScriptContent = (planId, scriptId) => api.get(`/scripts/${planId}/${scriptId}/content`)
-export const deleteScript     = (scriptId) => api.delete(`/scripts/${scriptId}`)
+export const listScripts        = (planId) => api.get(`/scripts/${planId}`)
+export const getScriptContent   = (planId, scriptId) => api.get(`/scripts/${planId}/${scriptId}/content`)
+export const updateScriptContent = (scriptId, content) => api.patch(`/scripts/${scriptId}/content`, { content })
+export const deleteScript       = (scriptId) => api.delete(`/scripts/${scriptId}`)
 
 export default api

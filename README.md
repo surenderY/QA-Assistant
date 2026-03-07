@@ -78,6 +78,7 @@ Services started:
 - **PostgreSQL**: localhost:5432
 - **Redis**: localhost:6379
 - **Flower Celery**:  http://localhost:5555
+- **Front end**:  http://localhost:5173
 
 ### 2b. Run locally (no Docker)
 
@@ -142,11 +143,11 @@ Full interactive docs at **http://localhost:8000/docs**
 | Phase | Scope | Weeks |
 |---|---|---|
 | **1** | Scaffold, DB schema, Auth, Docker | 1–2 ✅ |
-| **2** | JIRA Fetch Agent + Import View | 3–4 |
-| **3** | Test Plan Agent + Script Gen Agent | 5–7 |
-| **4** | Git Agent + commit flow | 8–9 |
+| **2** | JIRA Fetch Agent + Import View | 3–4 ✅ |
+| **3** | Test Plan Agent + Script Gen Agent | 5–7 ✅ |
+| **4** | Git Agent + commit flow | 8–9 ✅ |
 | **5** | Execution Agent + Results View | 10–12 |
-| **6** | Dashboard + Frontend polish | 13–14 |
+| **6** | Dashboard + Frontend polish | 13–14 ✅ |
 
 ---
 
@@ -326,4 +327,23 @@ Frontend shows branch + short SHA on each script row
 
 mkdir -p test_repo
 
+## Git remote changes
 
+What was added
+
+Query logic — when a story is selected and has committed scripts, the unique branch names are extracted and fetched in one parallel Promise.allSettled call against GET /scripts/branch/{name}. Failed fetches (e.g. local-only repo) are silently dropped.
+
+BranchPanel — appears below the story selector card whenever a story is selected:
+
+State             Shows
+No commits yet    Dashed placeholder "NO COMMITS YET"
+Loading           Spinner with "Fetching branch info…"
+Has branches      Green-tinted collapsible card listing each branch
+
+BranchRow — per branch, shows:
+
+Branch name with a ↗ external link to GitHub/GitLab/Bitbucket (auto-detected from remote URL)
+Commit SHA pill (amber) + commit message (truncated)
+Author name, commit timestamp, and ↑ PUSHED / ○ LOCAL status indicator
+
+The panel stays collapsed/expanded between re-renders via local useState, and re-fetches when scriptsData changes (e.g. after a new commit).

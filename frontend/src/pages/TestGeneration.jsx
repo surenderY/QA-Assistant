@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FlaskConical, Code2, ChevronDown, ChevronRight, Play,
   FileCode, Sparkles, CheckSquare, Square, GitBranch,
-  GitCommit, Upload, Check, RefreshCw
+  GitCommit, Upload, Check, RefreshCw, GitMerge, ExternalLink
 } from 'lucide-react'
 import {
   listStories, generateTestPlan, getTestPlan,
@@ -11,12 +11,14 @@ import {
 } from '../api/client'
 import api from '../api/client'
 import { Badge, Button, Card, SectionHeader, EmptyState, Spinner, Toast, Modal } from '../components/ui'
+import { ScriptViewerModal } from '../components/ScriptViewerModal'
 import { useToast } from '../hooks/useToast'
 
 // ── Extra API calls for Phase 4 ───────────────────────────────────────────
 const commitBatch = (planId, scriptIds, storyDbId) =>
   api.post(`/scripts/commit-batch/${planId}`, { script_ids: scriptIds, story_db_id: storyDbId })
-const getRepoStatus = () => api.get('/scripts/repo/status')
+const getRepoStatus = () => api.get("/scripts/repo/status")
+const getBranchInfo = (branchName) => api.get(`/scripts/branch/${branchName}`)
 
 export default function TestGeneration() {
   const qc = useQueryClient()
@@ -59,6 +61,31 @@ export default function TestGeneration() {
     queryFn: () => getRepoStatus().then(r => r.data),
     retry: false,
     throwOnError: false,
+  })
+
+  // Derive unique branch names from committed scripts for the selected story
+  const committedBranches = [...new Set(
+    (scriptsData?.scripts || [])
+      .filter(s => s.is_committed && s.branch_name)
+      .map(s => s.branch_name)
+  )]
+
+  // Fetch branch info for each unique branch
+  const { data: branchInfoList } = useQuery({
+    queryKey: ['branch-infos', committedBranches.join(',')],
+    queryFn: async () => {
+      if (!committedBranches.length) return []
+      const results = await Promise.allSettled(
+        committedBranches.map(b => getBranchInfo(b).then(r => r.data))
+      )
+      return results
+        .map((r, i) => r.status === 'fulfilled' ? { ...r.value, branch: committedBranches[i] } : null)
+        .filter(Boolean)
+    },
+    enabled: committedBranches.length > 0,
+    retry: false,
+    throwOnError: false,
+    staleTime: 30000,
   })
 
   // ── Mutations ─────────────────────────────────────────────────────────────
@@ -152,36 +179,48 @@ export default function TestGeneration() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, alignItems: 'start' }}>
 
-        {/* Story selector */}
-        <Card style={{ padding: 16 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 12 }}>
-            SELECT STORY
-          </div>
-          {stories.length === 0 ? (
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No stories imported yet.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {stories.map(s => (
-                <div key={s.id} onClick={() => { setSelectedStory(s.id); setSelectedScenarioIds([]); setSelectedScriptIds([]) }}
-                  style={{
-                    padding: '9px 10px', borderRadius: 'var(--radius)', cursor: 'pointer',
-                    border: '1px solid', transition: 'all 0.12s',
-                    borderColor: selectedStory === s.id ? 'var(--amber)' : 'var(--border)',
-                    background: selectedStory === s.id ? 'var(--amber-glow)' : 'var(--bg-elevated)',
-                  }}
-                >
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--amber)', fontWeight: 600, marginBottom: 2 }}>
-                    {s.story_id}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {s.title}
-                  </div>
-                  <div style={{ marginTop: 4 }}><Badge status={s.status} /></div>
-                </div>
-              ))}
+        {/* Story selector + branch panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Card style={{ padding: 16 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 12 }}>
+              SELECT STORY
             </div>
+            {stories.length === 0 ? (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No stories imported yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {stories.map(s => (
+                  <div key={s.id} onClick={() => { setSelectedStory(s.id); setSelectedScenarioIds([]); setSelectedScriptIds([]) }}
+                    style={{
+                      padding: '9px 10px', borderRadius: 'var(--radius)', cursor: 'pointer',
+                      border: '1px solid', transition: 'all 0.12s',
+                      borderColor: selectedStory === s.id ? 'var(--amber)' : 'var(--border)',
+                      background: selectedStory === s.id ? 'var(--amber-glow)' : 'var(--bg-elevated)',
+                    }}
+                  >
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--amber)', fontWeight: 600, marginBottom: 2 }}>
+                      {s.story_id}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.title}
+                    </div>
+                    <div style={{ marginTop: 4 }}><Badge status={s.status} /></div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Git branch details panel — only when a story is selected and has commits */}
+          {selectedStory && (
+            <BranchPanel
+              branchInfoList={branchInfoList}
+              repoStatus={repoStatus}
+              isLoading={committedBranches.length > 0 && !branchInfoList}
+              scriptCount={committedScripts.length}
+            />
           )}
-        </Card>
+        </div>
 
         {/* Main panel */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -330,29 +369,14 @@ export default function TestGeneration() {
         </div>
       </div>
 
-      {/* ── Script content modal ── */}
-      <Modal open={!!scriptModal} onClose={() => setScriptModal(null)} title={scriptModal?.name || 'Script'} width={820}>
-        {contentLoading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><Spinner /></div>
-        ) : scriptContent ? (
-          <>
-            {scriptContent.is_committed && (
-              <div style={{ display: 'flex', gap: 12, marginBottom: 14, padding: '8px 12px', background: 'var(--green-dim)', border: '1px solid var(--green)44', borderRadius: 'var(--radius)' }}>
-                <GitBranch size={13} color="var(--green)" />
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--green)' }}>
-                  {scriptContent.branch_name} · {scriptContent.commit_sha?.slice(0, 8)}
-                </span>
-                {scriptContent.git_path && (
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>
-                    {scriptContent.git_path}
-                  </span>
-                )}
-              </div>
-            )}
-            <pre className="code-block" style={{ maxHeight: 520 }}>{scriptContent.content}</pre>
-          </>
-        ) : null}
-      </Modal>
+      {/* ── Script viewer / editor modal ── */}
+      <ScriptViewerModal
+        open={!!scriptModal}
+        onClose={() => setScriptModal(null)}
+        scriptContent={scriptContent}
+        isLoading={contentLoading}
+        planId={planData?.id}
+      />
 
       {/* ── Commit modal ── */}
       <Modal open={commitModalOpen} onClose={() => setCommitModalOpen(false)} title="Commit Scripts to Git" width={580}>
@@ -533,6 +557,181 @@ function CommitModal({ uncommittedScripts, selectedScriptIds, onToggle, onToggle
         <Button icon={Upload} loading={loading} onClick={onCommit}>
           Commit {toCommit.length} Script(s)
         </Button>
+      </div>
+    </div>
+  )
+}
+
+// ── Branch Panel ───────────────────────────────────────────────────────────
+
+function BranchPanel({ branchInfoList, repoStatus, isLoading, scriptCount }) {
+  const [expanded, setExpanded] = useState(true)
+
+  const hasBranches = branchInfoList && branchInfoList.length > 0
+  const hasRemote = repoStatus?.has_remote
+
+  // Nothing committed yet — show a quiet placeholder
+  if (!isLoading && !hasBranches) {
+    return (
+      <div style={{
+        padding: '10px 12px',
+        border: '1px dashed var(--border)',
+        borderRadius: 'var(--radius)',
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <GitBranch size={12} color="var(--text-muted)" />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.06em' }}>
+          NO COMMITS YET
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      border: `1px solid ${hasBranches ? 'var(--green)33' : 'var(--border)'}`,
+      borderRadius: 'var(--radius)',
+      background: hasBranches ? 'var(--green-dim)' : 'var(--bg-elevated)',
+      overflow: 'hidden',
+    }}>
+      {/* Header row */}
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '9px 12px', cursor: 'pointer',
+        }}
+      >
+        <GitBranch size={12} color={hasBranches ? 'var(--green)' : 'var(--text-muted)'} />
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: '10px', letterSpacing: '0.08em', flex: 1,
+          color: hasBranches ? 'var(--green)' : 'var(--text-muted)',
+        }}>
+          {isLoading ? 'LOADING BRANCHES…' : `GIT BRANCHES (${branchInfoList?.length ?? 0})`}
+        </span>
+        {hasRemote && (
+          <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--green)', letterSpacing: '0.06em' }}>
+            ● REMOTE
+          </span>
+        )}
+        {hasBranches && (
+          expanded
+            ? <ChevronDown size={11} color="var(--text-muted)" />
+            : <ChevronRight size={11} color="var(--text-muted)" />
+        )}
+      </div>
+
+      {/* Branch list */}
+      {expanded && hasBranches && (
+        <div style={{ borderTop: '1px solid var(--green)22', display: 'flex', flexDirection: 'column' }}>
+          {branchInfoList.map((info, i) => (
+            <BranchRow key={info.branch} info={info} repoStatus={repoStatus} isLast={i === branchInfoList.length - 1} />
+          ))}
+
+          {/* Footer: script count summary */}
+          <div style={{
+            padding: '6px 12px', borderTop: '1px solid var(--green)22',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <GitCommit size={10} color="var(--text-muted)" />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>
+              {scriptCount} script{scriptCount !== 1 ? 's' : ''} committed
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isLoading && (
+        <div style={{ padding: '8px 12px', display: 'flex', gap: 8, alignItems: 'center', borderTop: '1px solid var(--border)' }}>
+          <Spinner size={11} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>Fetching branch info…</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BranchRow({ info, repoStatus, isLast }) {
+  const remoteUrl = repoStatus?.remote_url
+  // Build a best-effort compare/branch URL for GitHub/GitLab/Bitbucket
+  const branchUrl = (() => {
+    if (!remoteUrl || !info.branch) return null
+    const clean = remoteUrl.replace(/\.git$/, '').replace(/https?:\/\/[^@]+@/, 'https://')
+    if (clean.includes('github.com'))   return `${clean}/tree/${info.branch}`
+    if (clean.includes('gitlab.com'))   return `${clean}/-/tree/${info.branch}`
+    if (clean.includes('bitbucket.org')) return `${clean}/branch/${info.branch}`
+    return null
+  })()
+
+  const pushed = info.pushed ?? repoStatus?.has_remote
+
+  return (
+    <div style={{
+      padding: '9px 12px',
+      borderBottom: isLast ? 'none' : '1px solid var(--green)22',
+      display: 'flex', flexDirection: 'column', gap: 5,
+    }}>
+      {/* Branch name + link */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <GitMerge size={11} color="var(--green)" style={{ flexShrink: 0 }} />
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600,
+          color: 'var(--green)', flex: 1,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {info.branch}
+        </span>
+        {branchUrl && (
+          <a href={branchUrl} target="_blank" rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            title="Open branch in remote"
+            style={{ display: 'flex', alignItems: 'center', color: 'var(--text-muted)', flexShrink: 0 }}
+          >
+            <ExternalLink size={10} />
+          </a>
+        )}
+      </div>
+
+      {/* Commit SHA + message */}
+      {info.short_sha && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: '10px',
+            color: 'var(--amber)', background: 'var(--amber-glow)',
+            padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+          }}>
+            {info.short_sha}
+          </span>
+          {info.message && (
+            <span style={{
+              fontSize: '10px', color: 'var(--text-secondary)',
+              overflow: 'hidden', textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap', flex: 1, lineHeight: 1.6,
+            }}>
+              {info.message}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Author + date + pushed status */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {info.author && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', color: 'var(--text-muted)' }}>
+            {info.author.replace(/<.*?>/, '').trim()}
+          </span>
+        )}
+        {info.committed_at && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', color: 'var(--text-muted)' }}>
+            {new Date(info.committed_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}
+          </span>
+        )}
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: '9px', letterSpacing: '0.06em',
+          color: pushed ? 'var(--green)' : 'var(--text-muted)',
+        }}>
+          {pushed ? '↑ PUSHED' : '○ LOCAL'}
+        </span>
       </div>
     </div>
   )

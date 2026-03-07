@@ -5,7 +5,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.models import TestScript, TestPlan
+from app.models import TestScript, TestPlan, JiraStory
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -24,6 +24,10 @@ class CommitBatchRequest(BaseModel):
     """Commit multiple scripts from a plan at once."""
     script_ids: list[str]
     story_db_id: str
+
+class UpdateScriptRequest(BaseModel):
+    """Edit script content manually."""
+    content: str
 
 
 # ── Phase 3: Generate ──────────────────────────────────────────────────────
@@ -242,6 +246,59 @@ async def get_repo_status():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Repo error: {str(e)}")
 
+# ── Phase 3+: Edit script content ─────────────────────────────────────────
+
+@router.patch(
+    "/{script_id}/content",
+    summary="Update script content (manual edit)",
+)
+async def update_script_content(
+    script_id: uuid.UUID,
+    request: UpdateScriptRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Saves manually edited script content. Validates Python syntax before saving.
+    Clears is_committed + branch/SHA since content has diverged from what was committed.
+    """
+    import ast
+
+    script = await db.get(TestScript, script_id)
+    if not script:
+        raise HTTPException(status_code=404, detail="Script not found")
+
+    # Validate Python syntax
+    try:
+        ast.parse(request.content)
+    except SyntaxError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Python syntax error at line {e.lineno}: {e.msg}",
+        )
+
+    content_changed = script.script_content != request.content
+
+    script.script_content = request.content
+
+    # If content changed and was already committed, mark it as needing re-commit
+    if content_changed and script.is_committed:
+        script.is_committed = False
+        script.branch_name = None
+        script.commit_sha = None
+        script.git_path = None
+        logger.info(f"Script {script_id} edited after commit — marked for re-commit")
+
+    await db.commit()
+    await db.refresh(script)
+
+    return {
+        "id": str(script.id),
+        "script_name": script.script_name,
+        "content": script.script_content,
+        "is_committed": script.is_committed,
+        "content_changed": content_changed,
+        "message": "Script updated successfully" if content_changed else "No changes detected",
+    }
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _script_summary(s: TestScript) -> dict:

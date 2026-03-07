@@ -103,7 +103,7 @@ export default function Dashboard() {
             { phase: '01', label: 'Foundation & Setup',          done: true },
             { phase: '02', label: 'JIRA Agent & Import',         done: true },
             { phase: '03', label: 'Test Plan & Script Agents',   done: true },
-            { phase: '04', label: 'Git Agent & Commit Flow',     done: false },
+            { phase: '04', label: 'Git Agent & Commit Flow',     done: true },
             { phase: '05', label: 'Execution Engine & Results',  done: false },
             { phase: '06', label: 'Dashboard & Polish',          done: false },
           ].map(({ phase, label, done }) => (

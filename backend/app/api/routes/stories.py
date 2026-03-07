@@ -148,3 +148,86 @@ async def retry_import(story_db_id: uuid.UUID, db: AsyncSession = Depends(get_db
     from app.services.tasks import import_jira_story
     import_jira_story.delay(str(story_db_id), story.story_id)
     return {"message": f"Retrying import for {story.story_id}"}
+
+# ── Manual story creation ──────────────────────────────────────────────────
+
+from pydantic import BaseModel as _BaseModel
+
+class ManualStoryRequest(_BaseModel):
+    story_id: str
+    title: str
+    description: str | None = None
+    acceptance_criteria_items: list[str] = []
+    story_type: str | None = "Story"
+    priority: str | None = "Medium"
+    assignee: str | None = None
+    reporter: str | None = None
+    jira_status: str | None = "Open"
+    project_key: str | None = None
+
+
+@router.post(
+    "/stories/manual",
+    status_code=status.HTTP_201_CREATED,
+    summary="Manually create a user story without JIRA",
+)
+async def create_manual_story(
+    request: ManualStoryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Creates a fully-populated JiraStory record directly from form data.
+    No JIRA connection required — ready immediately for test plan generation.
+    """
+    story_key = request.story_id.upper().strip()
+
+    # Check duplicate
+    existing = await db.scalar(
+        select(JiraStory).where(JiraStory.story_id == story_key)
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Story {story_key} already exists (db_id={existing.id}).",
+        )
+
+    project_key = (
+        request.project_key.upper()
+        if request.project_key
+        else (story_key.split("-")[0] if "-" in story_key else story_key)
+    )
+
+    # Build acceptance criteria structure
+    ac = None
+    if request.acceptance_criteria_items:
+        ac = {
+            "source": "manual",
+            "items": [item.strip() for item in request.acceptance_criteria_items if item.strip()],
+        }
+
+    story = JiraStory(
+        story_id=story_key,
+        project_key=project_key,
+        title=request.title.strip(),
+        description=request.description,
+        acceptance_criteria=ac,
+        story_type=request.story_type,
+        priority=request.priority,
+        assignee=request.assignee,
+        reporter=request.reporter,
+        jira_status=request.jira_status,
+        status=StoryStatus.NEW,
+        raw_data={"source": "manual"},
+    )
+    db.add(story)
+    await db.commit()
+    await db.refresh(story)
+
+    logger.info(f"Manual story created: {story_key} (db_id={story.id})")
+
+    return {
+        "message": f"Story {story_key} created successfully.",
+        "story_db_id": str(story.id),
+        "story_id": story_key,
+        "status": "new",
+    }
